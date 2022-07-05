@@ -16,6 +16,20 @@ import org.json.JSONObject
 /** AmazonInappPurchasePlugin  */
 class AmazonInappPurchasePlugin : MethodCallHandler {
     private val TAG = "InappPurchasePlugin"
+
+    @VisibleForTesting
+    internal object MethodNames {
+        const val UPDATE_PACKAGE_INSTALLER = "Additional#updatePackageInstaller()"
+        const val INITIALIZE = "AmazonIAPClient#initialize()"
+        const val PLATFORM_VERSION = "AmazonIAPClient#getPlatformVersion()"
+        const val CLIENT_INFORMATION = "AmazonIAPClient#getClientInformation()"
+        const val CLIENT_INFORMATION_CALLBACK =
+            "AmazonIAPClient#onClientInformation(AmazonUserData)"
+        const val SDK_MODE = "AmazonIAPClient#getSDKMode()"
+        const val LICENSE_VERIFICATION_RESPONSE_CALLBACK =
+            "AmazonIAPClient#onLicenseVerificationResponse()"
+    }
+
     private var safeResult: MethodResultWrapper? = null
     private var channel: MethodChannel? = null
     private var context: Context? = null
@@ -36,20 +50,71 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
         if(call.method == "getStore"){
             result.success(FlutterInappPurchasePlugin.getStore())
             return
+        } else if (call.method == MethodNames.UPDATE_PACKAGE_INSTALLER) {
+            val pm = applicationContext?.packageManager;
+            val packageName = applicationContext?.packageName;
+
+            if (pm != null && packageName != null) {
+                try {
+                    pm.setInstallerPackageName(packageName, call.arguments as String);
+                    result.success(true)
+                } catch (e: Exception) {
+                    result.error("PM_FAILED", "PM failed: ${e.message}", null)
+                }
+            } else {
+                result.error("PM_FAILED", "PM failed", null);
+            }
+            return
         }
 
         safeResult = MethodResultWrapper(result, channel!!)
 
         try {
-            PurchasingService.registerListener(context, purchasesUpdatedListener)
+            if (context != null) {
+                PurchasingService.registerListener(context, purchasesUpdatedListener)
+            } else {
+                Log.w(
+                    tag,
+                    "Cannot register listener on purchasing service because applicationContext is null."
+                )
+            }
         } catch (e: Exception) {
+            Log.e(
+                tag,
+                "For call '${call.method}', plugin failed to add purchase listener with error: ${e.message}"
+            )
             safeResult!!.error(
                 call.method,
                 "Call endConnection method if you want to start over.",
                 e.message
             )
         }
+
         when (call.method) {
+            MethodNames.INITIALIZE -> {
+                LicensingService.verifyLicense(
+                    applicationContext
+                ) {
+                    Log.d(tag, "License verification response ${it.requestStatus}")
+                    methodResult?.invokeMethod(
+                        MethodNames.LICENSE_VERIFICATION_RESPONSE_CALLBACK,
+                        it.requestStatus.name
+                    )
+                };
+                result.success(true);
+            }
+            MethodNames.PLATFORM_VERSION -> {
+                result.success("Android ${android.os.Build.VERSION.RELEASE}")
+            }
+            MethodNames.CLIENT_INFORMATION -> {
+                val data = PurchasingService.getUserData();
+                Log.d(tag, "Requesting user data from purchasing service: ${data.toJSON()}");
+                Log.d(tag, "Appstore SDK Mode: " + LicensingService.getAppstoreSDKMode());
+                result.success(true)
+            }
+            MethodNames.SDK_MODE -> {
+                result.success(LicensingService.getAppstoreSDKMode())
+            }
             "initConnection" -> {
                 PurchasingService.getUserData()
                 safeResult!!.success("Billing client ready")
@@ -117,8 +182,43 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
     }
 
     private val purchasesUpdatedListener: PurchasingListener = object : PurchasingListener {
-        override fun onUserDataResponse(userDataResponse: UserDataResponse) {
-            Log.d(TAG, "oudr=$userDataResponse")
+        override fun onUserDataResponse(response: UserDataResponse) {
+            Log.d(TAG, "Received user data response: $response")
+            try {
+                val status = response.requestStatus
+                var currentUserId: String? = null
+                var currentMarketplace: String? = null
+                val statusValue: String
+
+                when (status) {
+                    UserDataResponse.RequestStatus.SUCCESSFUL -> {
+                        currentUserId = response.userData.userId
+                        currentMarketplace = response.userData.marketplace
+                        statusValue = "SUCCESSFUL"
+                    }
+                    UserDataResponse.RequestStatus.FAILED, null -> statusValue = "FAILED"
+                    // Fail gracefully.
+                    UserDataResponse.RequestStatus.NOT_SUPPORTED ->
+                        statusValue = "NOT_SUPPORTED"
+                }
+
+                val item: HashMap<String, Any?> = HashMap()
+
+                item["userId"] = currentUserId
+                item["marketplace"] = currentMarketplace
+                item["status"] = statusValue
+
+                Log.d(TAG, "Putting data: $item")
+                val result = methodResult
+                if (result == null) {
+                    Log.d(TAG, "Method result is null")
+                } else {
+                    result.invokeMethod(MethodNames.CLIENT_INFORMATION_CALLBACK, item)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "ON_USER_DATA_RESPONSE_JSON_PARSE_ERROR: ${e.message}")
+                methodResult?.error("ON_USER_DATA_RESPONSE_JSON_PARSE_ERROR", e.message, null);
+            }
         }
 
         // getItemsByType
