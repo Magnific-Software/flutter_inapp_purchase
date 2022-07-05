@@ -55,8 +55,8 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
             result.success(FlutterInappPurchasePlugin.getStore())
             return
         } else if (call.method == MethodNames.UPDATE_PACKAGE_INSTALLER) {
-            val pm = applicationContext?.packageManager;
-            val packageName = applicationContext?.packageName;
+            val pm = context?.packageManager;
+            val packageName = context?.packageName;
 
             if (pm != null && packageName != null) {
                 try {
@@ -79,7 +79,7 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
             } else {
                 Log.w(
                     TAG,
-                    "Cannot register listener on purchasing service because applicationContext is null."
+                    "Cannot register listener on purchasing service because context is null."
                 )
             }
         } catch (e: Exception) {
@@ -97,10 +97,10 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
         when (call.method) {
             MethodNames.INITIALIZE -> {
                 LicensingService.verifyLicense(
-                    applicationContext
+                    context
                 ) {
                     Log.d(TAG, "License verification response ${it.requestStatus}")
-                    methodResult?.invokeMethod(
+                    safeResult?.invokeMethod(
                         MethodNames.LICENSE_VERIFICATION_RESPONSE_CALLBACK,
                         it.requestStatus.name
                     )
@@ -213,7 +213,7 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
                 item["status"] = statusValue
 
                 Log.d(TAG, "Putting data: $item")
-                val result = methodResult
+                val result = safeResult
                 if (result == null) {
                     Log.d(TAG, "Method result is null")
                 } else {
@@ -221,7 +221,7 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "ON_USER_DATA_RESPONSE_JSON_PARSE_ERROR: ${e.message}")
-                methodResult?.error("ON_USER_DATA_RESPONSE_JSON_PARSE_ERROR", e.message, null);
+                safeResult?.error("ON_USER_DATA_RESPONSE_JSON_PARSE_ERROR", e.message, null);
             }
         }
 
