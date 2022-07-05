@@ -3,7 +3,6 @@ package com.dooboolab.flutterinapppurchase
 import android.app.Activity
 import android.content.Context
 import android.util.Log
-import androidx.annotation.NonNull
 import androidx.annotation.VisibleForTesting
 import com.amazon.device.drm.LicensingService
 import com.amazon.device.iap.PurchasingListener
@@ -12,7 +11,6 @@ import com.amazon.device.iap.model.*
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
-import io.flutter.plugin.common.MethodChannel.Result
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -96,16 +94,20 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
 
         when (call.method) {
             MethodNames.INITIALIZE -> {
-                LicensingService.verifyLicense(
-                    context
-                ) {
-                    Log.d(TAG, "License verification response ${it.requestStatus}")
-                    safeResult?.invokeMethod(
-                        MethodNames.LICENSE_VERIFICATION_RESPONSE_CALLBACK,
-                        it.requestStatus.name
-                    )
-                };
-                result.success(true);
+                try {
+                    LicensingService.verifyLicense(
+                        context
+                    ) {
+                        Log.d(TAG, "License verification response ${it.requestStatus}")
+                        safeResult?.invokeMethod(
+                            MethodNames.LICENSE_VERIFICATION_RESPONSE_CALLBACK,
+                            it.requestStatus.name
+                        )
+                    };
+                    result.success(true);
+                } catch (e: Exception) {
+                    result.error("LICENSING_VERIFICATION_FAILED", "Failed verification ${e.message}", e.message);
+                }
             }
             MethodNames.PLATFORM_VERSION -> {
                 result.success("Android ${android.os.Build.VERSION.RELEASE}")
@@ -258,6 +260,7 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
                                     "inapp"
                                 )
                                 ProductType.SUBSCRIPTION -> item.put("type", "subs")
+                                null -> item.put("type", "unknown")
                             }
                             item.put("localizedPrice", product.price)
                             item.put("title", product.title)
@@ -276,6 +279,7 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
                         safeResult!!.error(TAG, "E_BILLING_RESPONSE_JSON_PARSE_ERROR", e.message)
                     }
                 }
+                null,
                 ProductDataResponse.RequestStatus.FAILED -> {
                     safeResult!!.error(TAG, "FAILED", null)
                     Log.d(TAG, "onProductDataResponse: failed, should retry request")
