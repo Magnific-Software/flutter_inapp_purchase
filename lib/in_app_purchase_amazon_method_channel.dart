@@ -4,9 +4,11 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_inapp_purchase/modules.dart';
 
 import 'in_app_purchase_amazon_platform_interface.dart';
 import 'user_data.dart';
+import 'utils.dart';
 
 class _MethodNames {
   static const UPDATE_PACKAGE_INSTALLER = "Additional#updatePackageInstaller()";
@@ -15,6 +17,9 @@ class _MethodNames {
   static const CLIENT_INFORMATION = "AmazonIAPClient#getClientInformation()";
   static const CLIENT_INFORMATION_CALLBACK =
       "AmazonIAPClient#onClientInformation(AmazonUserData)";
+  static const SKUS_CALLBACK = "AmazonIAPClient#onSKU(AmazonUserData)";
+  static const PURCHASE_UPDATE_CALLBACK =
+      "AmazonIAPClient#onPurchaseUpdate(AmazonUserData)";
   static const SDK_MODE = "AmazonIAPClient#getSDKMode()";
   static const LICENSE_VERIFICATION_RESPONSE_CALLBACK =
       "AmazonIAPClient#onLicenseVerificationResponse()";
@@ -84,11 +89,15 @@ class MethodChannelInAppPurchaseAmazon extends InAppPurchaseAmazonPlatform {
     _clientInformationStreamController ??= StreamController.broadcast();
     _licenseVerificationResponseStreamController ??=
         StreamController.broadcast();
+    _skusStreamController ??= StreamController.broadcast();
+    _purchasedItemStreamController ??= StreamController.broadcast();
     return methodChannel.setMethodCallHandler(_onMethodCall);
   }
 
   StreamController<AmazonUserData?>? _clientInformationStreamController;
   StreamController<String?>? _licenseVerificationResponseStreamController;
+  StreamController<List<IAPItem>>? _skusStreamController;
+  StreamController<List<PurchasedItem>?>? _purchasedItemStreamController;
 
   @override
   Stream<AmazonUserData?> get clientInformationStream =>
@@ -97,6 +106,13 @@ class MethodChannelInAppPurchaseAmazon extends InAppPurchaseAmazonPlatform {
   @override
   Stream<String?> get licenseVerificationResponseStream =>
       _licenseVerificationResponseStreamController!.stream;
+
+  @override
+  Stream<List<IAPItem>> get skusStream => _skusStreamController!.stream;
+
+  @override
+  Stream<List<PurchasedItem>?> get purchasedItemStream =>
+      _purchasedItemStreamController!.stream;
 
   Future<Object?> _onMethodCall(MethodCall call) async {
     if (kDebugMode) {
@@ -113,6 +129,30 @@ class MethodChannelInAppPurchaseAmazon extends InAppPurchaseAmazonPlatform {
         final Object? value = call.arguments;
         _licenseVerificationResponseStreamController
             ?.add(value is String ? value : null);
+        break;
+      case _MethodNames.SKUS_CALLBACK:
+        final Object? value = call.arguments;
+        try {
+          final items = extractItems(value);
+          _skusStreamController?.add(items);
+        } catch (e, s) {
+          _skusStreamController?.addError(
+            Exception('${e.toString()}: $value\n'),
+            s,
+          );
+        }
+        break;
+      case _MethodNames.PURCHASE_UPDATE_CALLBACK:
+        final Object? value = call.arguments;
+        try {
+          final items = extractPurchased(value);
+          _purchasedItemStreamController?.add(items);
+        } catch (e, s) {
+          _purchasedItemStreamController?.addError(
+            Exception('${e.toString()}: $value\n'),
+            s,
+          );
+        }
         break;
       default:
         final e = ArgumentError('Unknown method ${call.method}');
@@ -131,8 +171,12 @@ class MethodChannelInAppPurchaseAmazon extends InAppPurchaseAmazonPlatform {
     super.dispose();
     _clientInformationStreamController?.close();
     _licenseVerificationResponseStreamController?.close();
+    _skusStreamController?.close();
+    _purchasedItemStreamController?.close();
     _clientInformationStreamController = null;
     _licenseVerificationResponseStreamController = null;
+    _skusStreamController = null;
+    _purchasedItemStreamController = null;
     _completer = null;
   }
 }

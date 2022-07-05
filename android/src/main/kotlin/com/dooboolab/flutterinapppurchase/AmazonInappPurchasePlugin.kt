@@ -1,7 +1,9 @@
 package com.dooboolab.flutterinapppurchase
 
 import android.app.Activity
+import android.app.Application
 import android.content.Context
+import android.os.Bundle
 import android.util.Log
 import androidx.annotation.VisibleForTesting
 import com.amazon.device.drm.LicensingService
@@ -17,8 +19,12 @@ import org.json.JSONObject
 import java.util.*
 
 /** AmazonInappPurchasePlugin  */
-class AmazonInappPurchasePlugin : MethodCallHandler {
-    private val TAG = "InappPurchasePlugin"
+class AmazonInappPurchasePlugin(
+    private var activity: Activity?,
+    private val context: Context,
+    private val channel: MethodChannel,
+) : MethodCallHandler, Application.ActivityLifecycleCallbacks {
+    private val tag = "InappPurchasePlugin"
 
     @VisibleForTesting
     internal object MethodNames {
@@ -31,82 +37,82 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
         const val SDK_MODE = "AmazonIAPClient#getSDKMode()"
         const val LICENSE_VERIFICATION_RESPONSE_CALLBACK =
             "AmazonIAPClient#onLicenseVerificationResponse()"
+        const val SKUS_CALLBACK = "AmazonIAPClient#onSKU(AmazonUserData)"
+        const val PURCHASE_UPDATE_CALLBACK = "AmazonIAPClient#onPurchaseUpdate(AmazonUserData)"
         const val getAvailableItemsByType = "getAvailableItemsByType"
         const val getProducts = "getProducts"
         const val getSubscriptions = "getSubscriptions"
     }
 
+    override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
+        // registerPurchaseServiceListener(activity)
+    }
+
+    override fun onActivityStarted(activity: Activity) {}
+    override fun onActivityResumed(activity: Activity) {}
+    override fun onActivityPaused(activity: Activity) {}
+    override fun onActivityStopped(activity: Activity) {}
+    override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+    override fun onActivityDestroyed(activity: Activity) {
+        if (this.activity === activity) {
+            (context as Application).unregisterActivityLifecycleCallbacks(this)
+            // endBillingClientConnection()
+        }
+    }
+
     private var safeResult: MethodResultWrapper? = null
     private val safeResults = HashMap<String, MethodResultWrapper>()
-    private var channel: MethodChannel? = null
-    private var context: Context? = null
-    private var activity: Activity? = null
-    fun setContext(context: Context?) {
-        this.context = context
-    }
 
     fun setActivity(activity: Activity?) {
         this.activity = activity
     }
 
-    fun setChannel(channel: MethodChannel?) {
-        this.channel = channel
+    private fun registerPurchaseServiceListener(context: Context) {
+        try {
+            PurchasingService.registerListener(context, purchasesUpdatedListener)
+        } catch (e: Exception) {
+            Log.e(
+                tag,
+                "Plugin failed to add purchase listener with error: ${e.message}"
+            )
+        }
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
-        if (call.method == "getStore") {
-            result.success(FlutterInappPurchasePlugin.getStore())
-            return
-        } else if (call.method == MethodNames.UPDATE_PACKAGE_INSTALLER) {
-            val pm = context?.packageManager
-            val packageName = context?.packageName
-
-            if (pm != null && packageName != null) {
-                try {
-                    pm.setInstallerPackageName(packageName, call.arguments as String)
-                    result.success(true)
-                } catch (e: Exception) {
-                    result.error("PM_FAILED", "PM failed: ${e.message}", null)
-                }
-            } else {
-                result.error("PM_FAILED", "PM failed", null)
-            }
-            return
-        }
-
-        safeResult = MethodResultWrapper(result, channel!!)
-
-        try {
-            if (context != null) {
-                PurchasingService.registerListener(context, purchasesUpdatedListener)
-            } else {
-                Log.w(
-                    TAG,
-                    "Cannot register listener on purchasing service because context is null."
-                )
-            }
-        } catch (e: Exception) {
-            Log.e(
-                TAG,
-                "For call '${call.method}', plugin failed to add purchase listener with error: ${e.message}"
-            )
-            safeResult!!.error(
-                call.method,
-                "Call endConnection method if you want to start over.",
-                e.message
-            )
-        }
+        safeResult = MethodResultWrapper(result, channel)
 
         safeResults[call.method] = safeResult!!
 
+        registerPurchaseServiceListener(context!!)
+
         when (call.method) {
+            "getStore" -> {
+                result.success(FlutterInappPurchasePlugin.getStore())
+                return
+            }
+            MethodNames.UPDATE_PACKAGE_INSTALLER -> {
+                val pm = context.packageManager
+                val packageName = context.packageName
+
+                if (pm != null && packageName != null) {
+                    try {
+                        pm.setInstallerPackageName(packageName, call.arguments as String)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("PM_FAILED", "PM failed: ${e.message}", null)
+                    }
+                } else {
+                    result.error("PM_FAILED", "PM failed", null)
+                }
+                return
+            }
             MethodNames.INITIALIZE -> {
                 try {
                     LicensingService.verifyLicense(
                         context
                     ) {
-                        Log.d(TAG, "License verification response ${it.requestStatus}")
-                        safeResult?.invokeMethod(
+                        Log.d(tag, "License verification response ${it.requestStatus}")
+                        channel.invokeMethod(
                             MethodNames.LICENSE_VERIFICATION_RESPONSE_CALLBACK,
                             it.requestStatus.name
                         )
@@ -125,8 +131,8 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
             }
             MethodNames.CLIENT_INFORMATION -> {
                 val data = PurchasingService.getUserData()
-                Log.d(TAG, "Requesting user data from purchasing service: ${data.toJSON()}")
-                Log.d(TAG, "Appstore SDK Mode: " + LicensingService.getAppstoreSDKMode())
+                Log.d(tag, "Requesting user data from purchasing service: ${data.toJSON()}")
+                Log.d(tag, "Appstore SDK Mode: " + LicensingService.getAppstoreSDKMode())
                 result.success(true)
             }
             MethodNames.SDK_MODE -> {
@@ -134,38 +140,38 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
             }
             "initConnection" -> {
                 PurchasingService.getUserData()
-                safeResult!!.success("Billing client ready")
+                result.success("Billing client ready")
             }
             "endConnection" -> {
-                safeResult!!.success("Billing client has ended.")
+                result.success("Billing client has ended.")
             }
             "isReady" -> {
-                safeResult!!.success(true)
+                result.success(true)
             }
             "showInAppMessages" -> {
-                safeResult!!.success("in app messages not supported for amazon")
+                result.success("in app messages not supported for amazon")
             }
             "consumeAllItems" -> {
                 // consumable is a separate type in amazon
-                safeResult!!.success("no-ops in amazon")
+                result.success("no-ops in amazon")
             }
             "acknowledgePurchase" -> {
-                safeResult!!.success("no-ops in amazon")
+                result.success("no-ops in amazon")
             }
             MethodNames.getProducts,
             MethodNames.getSubscriptions -> {
-                Log.d(TAG, call.method)
+                Log.d(tag, call.method)
                 val skus = call.argument<ArrayList<String>>("skus")!!
                 val productSkus: MutableSet<String> = HashSet()
                 for (i in skus.indices) {
-                    Log.d(TAG, "Adding " + skus[i])
+                    Log.d(tag, "Adding " + skus[i])
                     productSkus.add(skus[i])
                 }
                 PurchasingService.getProductData(productSkus)
             }
             MethodNames.getAvailableItemsByType -> {
                 val type = call.argument<String>("type")
-                Log.d(TAG, "gaibt=$type")
+                Log.d(tag, "gaibt=$type")
                 // NOTE: getPurchaseUpdates doesnt return Consumables which are FULFILLED
                 when (type) {
                     "inapp" -> {
@@ -173,16 +179,16 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
                     }
                     "subs" -> {
                         // Subscriptions are retrieved during inapp, so we just return empty list
-                        safeResult!!.success("[]")
+                        result.success("[]")
                     }
                     else -> {
-                        safeResult!!.notImplemented()
+                        result.notImplemented()
                     }
                 }
             }
             "getPurchaseHistoryByType" -> {
                 // No equivalent
-                safeResult!!.success("[]")
+                result.success("[]")
             }
             "buyItemByType" -> {
                 val type = call.argument<String>("type")
@@ -191,23 +197,23 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
                 val sku = call.argument<String>("sku")
                 val oldSku = call.argument<String>("oldSku")
                 //val prorationMode = call.argument<Int>("prorationMode")!!
-                Log.d(TAG, "type=$type||sku=$sku||oldsku=$oldSku")
+                Log.d(tag, "type=$type||sku=$sku||oldsku=$oldSku")
                 val requestId = PurchasingService.purchase(sku)
-                Log.d(TAG, "resid=$requestId")
+                Log.d(tag, "resid=$requestId")
             }
             "consumeProduct" -> {
                 // consumable is a separate type in amazon
-                safeResult!!.success("no-ops in amazon")
+                result.success("no-ops in amazon")
             }
             else -> {
-                safeResult!!.notImplemented()
+                result.notImplemented()
             }
         }
     }
 
     private val purchasesUpdatedListener: PurchasingListener = object : PurchasingListener {
         override fun onUserDataResponse(response: UserDataResponse) {
-            Log.d(TAG, "Received user data response: $response")
+            Log.d(tag, "Received user data response: $response")
             try {
                 val status = response.requestStatus
                 var currentUserId: String? = null
@@ -232,38 +238,38 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
                 item["marketplace"] = currentMarketplace
                 item["status"] = statusValue
 
-                Log.d(TAG, "Putting data: $item")
+                Log.d(tag, "Putting data: $item")
                 val result = safeResult
                 if (result == null) {
-                    Log.d(TAG, "Method result is null")
+                    Log.d(tag, "Method result is null")
                 } else {
-                    result.invokeMethod(MethodNames.CLIENT_INFORMATION_CALLBACK, item)
+                    channel.invokeMethod(MethodNames.CLIENT_INFORMATION_CALLBACK, item)
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "ON_USER_DATA_RESPONSE_JSON_PARSE_ERROR: ${e.message}")
+                Log.e(tag, "ON_USER_DATA_RESPONSE_JSON_PARSE_ERROR: ${e.message}")
                 safeResult?.error("ON_USER_DATA_RESPONSE_JSON_PARSE_ERROR", e.message, null)
             }
         }
 
         // getItemsByType
         override fun onProductDataResponse(response: ProductDataResponse) {
-            Log.d(TAG, "opdr=$response")
+            Log.d(tag, "opdr=$response")
             val status = response.requestStatus
-            Log.d(TAG, "onProductDataResponse: RequestStatus ($status)")
+            Log.d(tag, "onProductDataResponse: RequestStatus ($status)")
             when (status) {
                 ProductDataResponse.RequestStatus.SUCCESSFUL -> {
                     Log.d(
-                        TAG,
+                        tag,
                         "onProductDataResponse: successful.  The item data map in this response includes the valid SKUs"
                     )
                     val productData = response.productData
                     //Log.d(TAG, "productData="+productData.toString());
                     val unavailableSkus = response.unavailableSkus
                     Log.d(
-                        TAG,
+                        tag,
                         "onProductDataResponse: " + unavailableSkus.size + " unavailable skus"
                     )
-                    Log.d(TAG, "unavailableSkus=$unavailableSkus")
+                    Log.d(tag, "unavailableSkus=$unavailableSkus")
                     val items = JSONArray()
                     try {
                         for ((_, product) in productData) {
@@ -288,31 +294,32 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
                             item.put("freeTrialPeriodAndroid", "")
                             item.put("introductoryPriceCyclesAndroid", 0)
                             item.put("introductoryPricePeriodAndroid", "")
-                            Log.d(TAG, "opdr Putting $item")
+                            Log.d(tag, "opdr Putting $item")
                             items.put(item)
                         }
                         //System.err.println("Sending "+items.toString());
-                        safeResult!!.success(items.toString())
+                        safeResult?.success(items.toString())
+                        channel.invokeMethod(MethodNames.SKUS_CALLBACK, items.toString())
                     } catch (e: JSONException) {
-                        safeResult!!.error(TAG, "E_BILLING_RESPONSE_JSON_PARSE_ERROR", e.message)
+                        safeResult?.error(tag, "E_BILLING_RESPONSE_JSON_PARSE_ERROR", e.message)
                     }
                 }
                 null,
                 ProductDataResponse.RequestStatus.FAILED -> {
-                    safeResult!!.error(TAG, "FAILED", null)
-                    Log.d(TAG, "onProductDataResponse: failed, should retry request")
-                    safeResult!!.error(TAG, "NOT_SUPPORTED", null)
+                    safeResult?.error(tag, "FAILED", null)
+                    Log.d(tag, "onProductDataResponse: failed, should retry request")
+                    safeResult?.error(tag, "NOT_SUPPORTED", null)
                 }
                 ProductDataResponse.RequestStatus.NOT_SUPPORTED -> {
-                    Log.d(TAG, "onProductDataResponse: failed, should retry request")
-                    safeResult!!.error(TAG, "NOT_SUPPORTED", null)
+                    Log.d(tag, "onProductDataResponse: failed, should retry request")
+                    safeResult?.error(tag, "NOT_SUPPORTED", null)
                 }
             }
         }
 
         // buyItemByType
         override fun onPurchaseResponse(response: PurchaseResponse) {
-            Log.d(TAG, "opr=$response")
+            Log.d(tag, "opr=$response")
             when (val status = response.requestStatus) {
                 PurchaseResponse.RequestStatus.SUCCESSFUL -> {
                     val receipt = response.receipt
@@ -324,25 +331,32 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
                         val item = onPurchaseReceipt(
                             receipt,
                         )
-                        Log.d(TAG, "opr Putting $item")
-                        safeResult!!.success(item.toString())
-                        safeResult!!.invokeMethod("purchase-updated", item.toString())
+                        Log.d(tag, "opr Putting $item")
+                        safeResult?.success(item.toString())
+                        channel.invokeMethod("purchase-updated", item.toString())
                     } catch (e: JSONException) {
-                        safeResult!!.error(TAG, "E_BILLING_RESPONSE_JSON_PARSE_ERROR", e.message)
+                        safeResult?.error(tag, "E_BILLING_RESPONSE_JSON_PARSE_ERROR", e.message)
                     }
                 }
-                PurchaseResponse.RequestStatus.FAILED -> safeResult!!.error(
-                    TAG,
+                null,
+                PurchaseResponse.RequestStatus.FAILED -> safeResult?.error(
+                    tag,
                     "buyItemByType",
                     "billingResponse is not ok: $status"
                 )
-                else -> {}
+                else -> {
+                    safeResult?.error(
+                        tag,
+                        "buyItemByType",
+                        "billingResponse is not ok: $status"
+                    )
+                }
             }
         }
 
         // getAvailableItemsByType
         override fun onPurchaseUpdatesResponse(response: PurchaseUpdatesResponse) {
-            Log.d(TAG, "opudr=$response")
+            Log.d(tag, "opudr=$response")
             when (response.requestStatus) {
                 PurchaseUpdatesResponse.RequestStatus.SUCCESSFUL -> {
                     val items = JSONArray()
@@ -352,38 +366,57 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
                             val item = onPurchaseReceipt(
                                 receipt,
                             )
-                            Log.d(TAG, "opudr Putting $item")
+                            Log.d(tag, "opudr Putting $item")
                             items.put(item)
                         }
                         success(MethodNames.getAvailableItemsByType, items.toString())
                         success(MethodNames.getProducts, items.toString())
                         success(MethodNames.getSubscriptions, items.toString())
+                        channel.invokeMethod(MethodNames.PURCHASE_UPDATE_CALLBACK, items.toString())
                     } catch (e: JSONException) {
-                        error(MethodNames.getAvailableItemsByType, TAG, "E_BILLING_RESPONSE_JSON_PARSE_ERROR", e.message)
-                        error(MethodNames.getProducts, TAG, "E_BILLING_RESPONSE_JSON_PARSE_ERROR", e.message)
-                        error(MethodNames.getSubscriptions, TAG, "E_BILLING_RESPONSE_JSON_PARSE_ERROR", e.message)
+                        error(
+                            MethodNames.getAvailableItemsByType,
+                            tag,
+                            "E_BILLING_RESPONSE_JSON_PARSE_ERROR",
+                            e.message
+                        )
+                        error(
+                            MethodNames.getProducts,
+                            tag,
+                            "E_BILLING_RESPONSE_JSON_PARSE_ERROR",
+                            e.message
+                        )
+                        error(
+                            MethodNames.getSubscriptions,
+                            tag,
+                            "E_BILLING_RESPONSE_JSON_PARSE_ERROR",
+                            e.message
+                        )
                     }
                 }
                 null,
                 PurchaseUpdatesResponse.RequestStatus.FAILED -> {
-                    error(MethodNames.getAvailableItemsByType, TAG,
+                    error(
+                        MethodNames.getAvailableItemsByType, tag,
                         "FAILED",
                         null
                     )
-                    error(MethodNames.getProducts, TAG,
+                    error(
+                        MethodNames.getProducts, tag,
                         "FAILED",
                         null
                     )
-                    error(MethodNames.getSubscriptions, TAG,
+                    error(
+                        MethodNames.getSubscriptions, tag,
                         "FAILED",
                         null
                     )
                 }
                 PurchaseUpdatesResponse.RequestStatus.NOT_SUPPORTED -> {
-                    Log.d(TAG, "onPurchaseUpdatesResponse: failed, should retry request")
-                    error(MethodNames.getAvailableItemsByType, TAG, "NOT_SUPPORTED", null)
-                    error(MethodNames.getProducts, TAG, "NOT_SUPPORTED", null)
-                    error(MethodNames.getSubscriptions, TAG, "NOT_SUPPORTED", null)
+                    Log.d(tag, "onPurchaseUpdatesResponse: failed, should retry request")
+                    error(MethodNames.getAvailableItemsByType, tag, "NOT_SUPPORTED", null)
+                    error(MethodNames.getProducts, tag, "NOT_SUPPORTED", null)
+                    error(MethodNames.getSubscriptions, tag, "NOT_SUPPORTED", null)
                 }
             }
         }
@@ -421,18 +454,18 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
     }
 
     private fun success(name: String, result: Any?) {
-        if ( safeResults[name] == null) {
-            Log.w(TAG, "safe result already used for $name")
-            return;
+        if (safeResults[name] == null) {
+            Log.w(tag, "safe result already used for $name")
+            return
         }
         safeResults[name]?.success(result)
         safeResults.remove(name)
     }
 
     private fun error(name: String, errorCode: String, errorMessage: String?, errorDetails: Any?) {
-        if ( safeResults[name] == null) {
-            Log.w(TAG, "safe result already used for $name")
-            return;
+        if (safeResults[name] == null) {
+            Log.w(tag, "safe result already used for $name")
+            return
         }
         safeResults[name]?.error(errorCode, errorMessage, errorDetails)
         safeResults.remove(name)

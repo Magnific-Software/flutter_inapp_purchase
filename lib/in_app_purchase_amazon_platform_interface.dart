@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'in_app_purchase_amazon_method_channel.dart';
+import 'modules.dart';
 import 'user_data.dart';
 
 abstract class InAppPurchaseAmazonPlatform extends PlatformInterface {
@@ -33,6 +34,10 @@ abstract class InAppPurchaseAmazonPlatform extends PlatformInterface {
   Stream<AmazonUserData?> get clientInformationStream;
 
   Stream<String?> get licenseVerificationResponseStream;
+
+  Stream<List<IAPItem>> get skusStream;
+
+  Stream<List<PurchasedItem>?> get purchasedItemStream;
 
   Future<String?> getPlatformVersion() {
     throw UnimplementedError('platformVersion() has not been implemented.');

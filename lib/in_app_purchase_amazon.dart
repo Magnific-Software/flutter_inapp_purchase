@@ -1,3 +1,5 @@
+import 'package:flutter_inapp_purchase/modules.dart';
+
 import 'in_app_purchase_amazon_platform_interface.dart';
 import 'user_data.dart';
 
@@ -21,6 +23,14 @@ class InAppPurchaseAmazon {
   Stream<String?> get licenseVerificationResponseStream {
     return InAppPurchaseAmazonPlatform
         .instance.licenseVerificationResponseStream;
+  }
+
+  Stream<List<IAPItem>> get skusStream {
+    return InAppPurchaseAmazonPlatform.instance.skusStream;
+  }
+
+  Stream<List<PurchasedItem>?> get purchasedItemStream {
+    return InAppPurchaseAmazonPlatform.instance.purchasedItemStream;
   }
 
   Future<String?> getPlatformVersion() {

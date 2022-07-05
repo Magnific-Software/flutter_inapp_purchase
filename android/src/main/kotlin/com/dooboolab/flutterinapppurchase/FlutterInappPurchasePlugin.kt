@@ -1,25 +1,33 @@
 package com.dooboolab.flutterinapppurchase
 
-import io.flutter.embedding.engine.plugins.FlutterPlugin
-import io.flutter.embedding.engine.plugins.activity.ActivityAware
+import android.app.Activity
+import android.app.Application
 import android.content.Context
-import io.flutter.plugin.common.MethodChannel
-import io.flutter.embedding.engine.plugins.FlutterPlugin.FlutterPluginBinding
-import io.flutter.plugin.common.BinaryMessenger
-import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
-import io.flutter.plugin.common.PluginRegistry.Registrar
 import android.content.pm.PackageManager.NameNotFoundException
+import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.embedding.engine.plugins.FlutterPlugin.FlutterPluginBinding
+import io.flutter.embedding.engine.plugins.activity.ActivityAware
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
+import io.flutter.plugin.common.BinaryMessenger
+import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.PluginRegistry.Registrar
 
 /** FlutterInappPurchasePlugin  */
 class FlutterInappPurchasePlugin : FlutterPlugin, ActivityAware {
     private var androidInappPurchasePlugin: AndroidInappPurchasePlugin? = null
     private var amazonInappPurchasePlugin: AmazonInappPurchasePlugin? = null
     private var channel: MethodChannel? = null
+
     override fun onAttachedToEngine(binding: FlutterPluginBinding) {
-        onAttached(binding.applicationContext, binding.binaryMessenger)
+        setupMethodChannel( /*activity=*/
+            null, binding.binaryMessenger, binding.applicationContext)
     }
 
-    private fun onAttached(context: Context, messenger: BinaryMessenger) {
+    private fun setupMethodChannel(
+        activity: Activity?,
+        messenger: BinaryMessenger,
+        context: Context,
+    ) {
         isAndroid = isPackageInstalled(context, "com.android.vending")
         isAmazon = isPackageInstalled(context, "com.amazon.venezia")
 
@@ -33,16 +41,22 @@ class FlutterInappPurchasePlugin : FlutterPlugin, ActivityAware {
             }
         }
         channel = MethodChannel(messenger, "flutter_inapp")
+
         if (isAndroid) {
             androidInappPurchasePlugin = AndroidInappPurchasePlugin()
             androidInappPurchasePlugin!!.setContext(context)
             androidInappPurchasePlugin!!.setChannel(channel)
             channel!!.setMethodCallHandler(androidInappPurchasePlugin)
         } else if (isAmazon) {
-            amazonInappPurchasePlugin = AmazonInappPurchasePlugin()
-            amazonInappPurchasePlugin!!.setContext(context)
-            amazonInappPurchasePlugin!!.setChannel(channel)
+            amazonInappPurchasePlugin = AmazonInappPurchasePlugin(
+                activity,
+                context,
+                channel!!,
+            )
             channel!!.setMethodCallHandler(amazonInappPurchasePlugin)
+            (context.applicationContext as Application).registerActivityLifecycleCallbacks(
+                amazonInappPurchasePlugin
+            )
         }
     }
 
@@ -52,7 +66,7 @@ class FlutterInappPurchasePlugin : FlutterPlugin, ActivityAware {
         if (isAndroid) {
             androidInappPurchasePlugin!!.setChannel(null)
         } else if (isAmazon) {
-            amazonInappPurchasePlugin!!.setChannel(null)
+            // amazonInappPurchasePlugin!!.setChannel(null)
         }
     }
 
@@ -94,12 +108,7 @@ class FlutterInappPurchasePlugin : FlutterPlugin, ActivityAware {
         private var isAmazon = false
 
         fun getStore(): String {
-           return if (!isAndroid && !isAmazon) "none" else if (isAndroid) "play_store" else "amazon"
-        }
-
-        fun registerWith(registrar: Registrar) {
-            val instance = FlutterInappPurchasePlugin()
-            instance.onAttached(registrar.context(), registrar.messenger())
+            return if (!isAndroid && !isAmazon) "none" else if (isAndroid) "play_store" else "amazon"
         }
 
         private fun isPackageInstalled(ctx: Context, packageName: String): Boolean {
