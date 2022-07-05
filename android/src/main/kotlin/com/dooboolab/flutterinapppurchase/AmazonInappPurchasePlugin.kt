@@ -3,12 +3,16 @@ package com.dooboolab.flutterinapppurchase
 import android.app.Activity
 import android.content.Context
 import android.util.Log
+import androidx.annotation.NonNull
+import androidx.annotation.VisibleForTesting
+import com.amazon.device.drm.LicensingService
 import com.amazon.device.iap.PurchasingListener
 import com.amazon.device.iap.PurchasingService
 import com.amazon.device.iap.model.*
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
+import io.flutter.plugin.common.MethodChannel.Result
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -74,13 +78,13 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
                 PurchasingService.registerListener(context, purchasesUpdatedListener)
             } else {
                 Log.w(
-                    tag,
+                    TAG,
                     "Cannot register listener on purchasing service because applicationContext is null."
                 )
             }
         } catch (e: Exception) {
             Log.e(
-                tag,
+                TAG,
                 "For call '${call.method}', plugin failed to add purchase listener with error: ${e.message}"
             )
             safeResult!!.error(
@@ -95,7 +99,7 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
                 LicensingService.verifyLicense(
                     applicationContext
                 ) {
-                    Log.d(tag, "License verification response ${it.requestStatus}")
+                    Log.d(TAG, "License verification response ${it.requestStatus}")
                     methodResult?.invokeMethod(
                         MethodNames.LICENSE_VERIFICATION_RESPONSE_CALLBACK,
                         it.requestStatus.name
@@ -108,8 +112,8 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
             }
             MethodNames.CLIENT_INFORMATION -> {
                 val data = PurchasingService.getUserData();
-                Log.d(tag, "Requesting user data from purchasing service: ${data.toJSON()}");
-                Log.d(tag, "Appstore SDK Mode: " + LicensingService.getAppstoreSDKMode());
+                Log.d(TAG, "Requesting user data from purchasing service: ${data.toJSON()}");
+                Log.d(TAG, "Appstore SDK Mode: " + LicensingService.getAppstoreSDKMode());
                 result.success(true)
             }
             MethodNames.SDK_MODE -> {
