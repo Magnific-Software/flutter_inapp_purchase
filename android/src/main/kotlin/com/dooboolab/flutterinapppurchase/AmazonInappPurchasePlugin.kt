@@ -14,6 +14,7 @@ import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
+import java.util.*
 
 /** AmazonInappPurchasePlugin  */
 class AmazonInappPurchasePlugin : MethodCallHandler {
@@ -49,22 +50,22 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
-        if(call.method == "getStore"){
+        if (call.method == "getStore") {
             result.success(FlutterInappPurchasePlugin.getStore())
             return
         } else if (call.method == MethodNames.UPDATE_PACKAGE_INSTALLER) {
-            val pm = context?.packageManager;
-            val packageName = context?.packageName;
+            val pm = context?.packageManager
+            val packageName = context?.packageName
 
             if (pm != null && packageName != null) {
                 try {
-                    pm.setInstallerPackageName(packageName, call.arguments as String);
+                    pm.setInstallerPackageName(packageName, call.arguments as String)
                     result.success(true)
                 } catch (e: Exception) {
                     result.error("PM_FAILED", "PM failed: ${e.message}", null)
                 }
             } else {
-                result.error("PM_FAILED", "PM failed", null);
+                result.error("PM_FAILED", "PM failed", null)
             }
             return
         }
@@ -103,19 +104,23 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
                             MethodNames.LICENSE_VERIFICATION_RESPONSE_CALLBACK,
                             it.requestStatus.name
                         )
-                    };
-                    result.success(true);
+                    }
+                    result.success(true)
                 } catch (e: Exception) {
-                    result.error("LICENSING_VERIFICATION_FAILED", "Failed verification ${e.message}", e.message);
+                    result.error(
+                        "LICENSING_VERIFICATION_FAILED",
+                        "Failed verification ${e.message}",
+                        e.message
+                    )
                 }
             }
             MethodNames.PLATFORM_VERSION -> {
                 result.success("Android ${android.os.Build.VERSION.RELEASE}")
             }
             MethodNames.CLIENT_INFORMATION -> {
-                val data = PurchasingService.getUserData();
-                Log.d(TAG, "Requesting user data from purchasing service: ${data.toJSON()}");
-                Log.d(TAG, "Appstore SDK Mode: " + LicensingService.getAppstoreSDKMode());
+                val data = PurchasingService.getUserData()
+                Log.d(TAG, "Requesting user data from purchasing service: ${data.toJSON()}")
+                Log.d(TAG, "Appstore SDK Mode: " + LicensingService.getAppstoreSDKMode())
                 result.success(true)
             }
             MethodNames.SDK_MODE -> {
@@ -156,13 +161,17 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
                 val type = call.argument<String>("type")
                 Log.d(TAG, "gaibt=$type")
                 // NOTE: getPurchaseUpdates doesnt return Consumables which are FULFILLED
-                if (type == "inapp") {
-                    PurchasingService.getPurchaseUpdates(true)
-                } else if (type == "subs") {
-                    // Subscriptions are retrieved during inapp, so we just return empty list
-                    safeResult!!.success("[]")
-                } else {
-                    safeResult!!.notImplemented()
+                when (type) {
+                    "inapp" -> {
+                        PurchasingService.getPurchaseUpdates(true)
+                    }
+                    "subs" -> {
+                        // Subscriptions are retrieved during inapp, so we just return empty list
+                        safeResult!!.success("[]")
+                    }
+                    else -> {
+                        safeResult!!.notImplemented()
+                    }
                 }
             }
             "getPurchaseHistoryByType" -> {
@@ -226,7 +235,7 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "ON_USER_DATA_RESPONSE_JSON_PARSE_ERROR: ${e.message}")
-                safeResult?.error("ON_USER_DATA_RESPONSE_JSON_PARSE_ERROR", e.message, null);
+                safeResult?.error("ON_USER_DATA_RESPONSE_JSON_PARSE_ERROR", e.message, null)
             }
         }
 
@@ -305,14 +314,9 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
                         receipt.receiptId,
                         FulfillmentResult.FULFILLED
                     )
-                    val date = receipt.purchaseDate
-                    val transactionDate = date.time
                     try {
-                        val item = getPurchaseData(
-                            receipt.sku,
-                            receipt.receiptId,
-                            receipt.receiptId,
-                            transactionDate.toDouble()
+                        val item = onPurchaseReceipt(
+                            receipt,
                         )
                         Log.d(TAG, "opr Putting $item")
                         safeResult!!.success(item.toString())
@@ -339,13 +343,8 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
                     try {
                         val receipts = response.receipts
                         for (receipt in receipts) {
-                            val date = receipt.purchaseDate
-                            val transactionDate = date.time
-                            val item = getPurchaseData(
-                                receipt.sku,
-                                receipt.receiptId,
-                                receipt.receiptId,
-                                transactionDate.toDouble()
+                            val item = onPurchaseReceipt(
+                                receipt,
                             )
                             Log.d(TAG, "opudr Putting $item")
                             items.put(item)
@@ -355,6 +354,7 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
                         safeResult!!.error(TAG, "E_BILLING_RESPONSE_JSON_PARSE_ERROR", e.message)
                     }
                 }
+                null,
                 PurchaseUpdatesResponse.RequestStatus.FAILED -> safeResult!!.error(
                     TAG,
                     "FAILED",
@@ -369,18 +369,33 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
     }
 
     @Throws(JSONException::class)
-    fun getPurchaseData(
-        productId: String?, transactionId: String?, transactionReceipt: String?,
-        transactionDate: Double?
+    fun onPurchaseReceipt(
+        receipt: Receipt,
     ): JSONObject {
         val item = JSONObject()
-        item.put("productId", productId)
-        item.put("transactionId", transactionId)
-        item.put("transactionReceipt", transactionReceipt)
-        item.put("transactionDate", (transactionDate!!).toString())
+        item.put("productId", receipt.sku)
+        item.put("transactionId", receipt.receiptId)
+        item.put("transactionReceipt", receipt.receiptId)
+        item.put("transactionDate", dateToString(receipt.purchaseDate))
         item.put("dataAndroid", null)
         item.put("signatureAndroid", null)
         item.put("purchaseToken", null)
+
+        val extra = JSONObject()
+
+        val extraAmazon = JSONObject()
+        extraAmazon.put("productType", receipt.productType.name)
+        extraAmazon.put("cancelDate", dateToString(receipt.cancelDate))
+        extraAmazon.put("deferredDate", dateToString(receipt.deferredDate))
+        extraAmazon.put("deferredSku", receipt.deferredSku)
+        extraAmazon.put("termSku", receipt.termSku)
+
+        extra.put("amazon", extraAmazon)
+        item.put("extra", extra)
         return item
+    }
+
+    private fun dateToString(date: Date): String {
+        return date.time.toDouble().toString()
     }
 }

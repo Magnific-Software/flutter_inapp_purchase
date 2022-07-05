@@ -19,3 +19,35 @@ Map<String, dynamic> _$AmazonUserDataToJson(AmazonUserData instance) =>
       'userId': instance.userId,
       'status': instance.status,
     };
+
+PurchasedItemExtra _$PurchasedItemExtraFromJson(Map<String, dynamic> json) =>
+    PurchasedItemExtra(
+      json['amazon'] == null
+          ? null
+          : AmazonPurchasedItemExtraData.fromJson(json['amazon']),
+    );
+
+Map<String, dynamic> _$PurchasedItemExtraToJson(PurchasedItemExtra instance) =>
+    <String, dynamic>{
+      'amazon': instance.amazon,
+    };
+
+AmazonPurchasedItemExtraData _$AmazonPurchasedItemExtraDataFromJson(
+        Map<String, dynamic> json) =>
+    AmazonPurchasedItemExtraData(
+      json['productType'] as String?,
+      json['cancelDate'] as String?,
+      json['deferredDate'] as String?,
+      json['deferredSku'] as String?,
+      json['termSku'] as String?,
+    );
+
+Map<String, dynamic> _$AmazonPurchasedItemExtraDataToJson(
+        AmazonPurchasedItemExtraData instance) =>
+    <String, dynamic>{
+      'productType': instance.productType,
+      'cancelDate': instance.cancelDate,
+      'deferredDate': instance.deferredDate,
+      'deferredSku': instance.deferredSku,
+      'termSku': instance.termSku,
+    };

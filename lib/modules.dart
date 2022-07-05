@@ -1,3 +1,5 @@
+import 'user_data.dart';
+
 enum ResponseCodeAndroid {
   BILLING_RESPONSE_RESULT_OK,
   BILLING_RESPONSE_RESULT_USER_CANCELED,
@@ -225,6 +227,16 @@ class PurchasedItem {
   final String? originalTransactionIdentifierIOS;
   final TransactionState? transactionStateIOS;
 
+  final PurchasedItemExtra? extra;
+
+  List<PurchasedItemExtraData> get extras {
+    final amazon = extra?.amazon;
+
+    return [
+      if (amazon != null) amazon,
+    ];
+  }
+
   /// Create [PurchasedItem] from a Map that was previously JSON formatted
   PurchasedItem.fromJSON(Map<String, dynamic> json)
       : productId = json['productId'] as String?,
@@ -243,7 +255,8 @@ class PurchasedItem {
         originalTransactionIdentifierIOS =
             json['originalTransactionIdentifierIOS'] as String?,
         transactionStateIOS =
-            _decodeTransactionStateIOS(json['transactionStateIOS'] as int?);
+            _decodeTransactionStateIOS(json['transactionStateIOS'] as int?),
+        extra = PurchasedItemExtra.fromJson(json['extra']);
 
   /// This returns transaction dates in ISO 8601 format.
   @override

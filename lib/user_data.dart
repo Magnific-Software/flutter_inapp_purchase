@@ -27,3 +27,41 @@ class AmazonUserData {
     return 'AmazonUserData{marketplace: $marketplace, userId: $userId, status: $status}';
   }
 }
+
+class PurchasedItemExtraData {
+  const PurchasedItemExtraData();
+}
+
+@JsonSerializable()
+class PurchasedItemExtra {
+  final AmazonPurchasedItemExtraData? amazon;
+
+  const PurchasedItemExtra(this.amazon);
+
+  factory PurchasedItemExtra.fromJson(dynamic json) =>
+      _$PurchasedItemExtraFromJson(json ?? const <String, dynamic>{});
+
+  Map<String, dynamic> toJson() => _$PurchasedItemExtraToJson(this);
+}
+
+@JsonSerializable()
+class AmazonPurchasedItemExtraData extends PurchasedItemExtraData {
+  final String? productType;
+  final String? cancelDate;
+  final String? deferredDate;
+  final String? deferredSku;
+  final String? termSku;
+
+  const AmazonPurchasedItemExtraData(
+    this.productType,
+    this.cancelDate,
+    this.deferredDate,
+    this.deferredSku,
+    this.termSku,
+  );
+
+  factory AmazonPurchasedItemExtraData.fromJson(dynamic json) =>
+      _$AmazonPurchasedItemExtraDataFromJson(json);
+
+  Map<String, dynamic> toJson() => _$AmazonPurchasedItemExtraDataToJson(this);
+}
