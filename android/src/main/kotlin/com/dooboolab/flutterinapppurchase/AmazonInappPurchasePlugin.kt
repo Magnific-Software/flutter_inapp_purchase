@@ -31,9 +31,13 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
         const val SDK_MODE = "AmazonIAPClient#getSDKMode()"
         const val LICENSE_VERIFICATION_RESPONSE_CALLBACK =
             "AmazonIAPClient#onLicenseVerificationResponse()"
+        const val getAvailableItemsByType = "getAvailableItemsByType"
+        const val getProducts = "getProducts"
+        const val getSubscriptions = "getSubscriptions"
     }
 
     private var safeResult: MethodResultWrapper? = null
+    private val safeResults = HashMap<String, MethodResultWrapper>()
     private var channel: MethodChannel? = null
     private var context: Context? = null
     private var activity: Activity? = null
@@ -93,6 +97,8 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
             )
         }
 
+        safeResults[call.method] = safeResult!!
+
         when (call.method) {
             MethodNames.INITIALIZE -> {
                 try {
@@ -146,8 +152,8 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
             "acknowledgePurchase" -> {
                 safeResult!!.success("no-ops in amazon")
             }
-            "getProducts",
-            "getSubscriptions" -> {
+            MethodNames.getProducts,
+            MethodNames.getSubscriptions -> {
                 Log.d(TAG, call.method)
                 val skus = call.argument<ArrayList<String>>("skus")!!
                 val productSkus: MutableSet<String> = HashSet()
@@ -157,7 +163,7 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
                 }
                 PurchasingService.getProductData(productSkus)
             }
-            "getAvailableItemsByType" -> {
+            MethodNames.getAvailableItemsByType -> {
                 val type = call.argument<String>("type")
                 Log.d(TAG, "gaibt=$type")
                 // NOTE: getPurchaseUpdates doesnt return Consumables which are FULFILLED
@@ -349,20 +355,35 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
                             Log.d(TAG, "opudr Putting $item")
                             items.put(item)
                         }
-                        safeResult!!.success(items.toString())
+                        success(MethodNames.getAvailableItemsByType, items.toString())
+                        success(MethodNames.getProducts, items.toString())
+                        success(MethodNames.getSubscriptions, items.toString())
                     } catch (e: JSONException) {
-                        safeResult!!.error(TAG, "E_BILLING_RESPONSE_JSON_PARSE_ERROR", e.message)
+                        error(MethodNames.getAvailableItemsByType, TAG, "E_BILLING_RESPONSE_JSON_PARSE_ERROR", e.message)
+                        error(MethodNames.getProducts, TAG, "E_BILLING_RESPONSE_JSON_PARSE_ERROR", e.message)
+                        error(MethodNames.getSubscriptions, TAG, "E_BILLING_RESPONSE_JSON_PARSE_ERROR", e.message)
                     }
                 }
                 null,
-                PurchaseUpdatesResponse.RequestStatus.FAILED -> safeResult!!.error(
-                    TAG,
-                    "FAILED",
-                    null
-                )
+                PurchaseUpdatesResponse.RequestStatus.FAILED -> {
+                    error(MethodNames.getAvailableItemsByType, TAG,
+                        "FAILED",
+                        null
+                    )
+                    error(MethodNames.getProducts, TAG,
+                        "FAILED",
+                        null
+                    )
+                    error(MethodNames.getSubscriptions, TAG,
+                        "FAILED",
+                        null
+                    )
+                }
                 PurchaseUpdatesResponse.RequestStatus.NOT_SUPPORTED -> {
                     Log.d(TAG, "onPurchaseUpdatesResponse: failed, should retry request")
-                    safeResult!!.error(TAG, "NOT_SUPPORTED", null)
+                    error(MethodNames.getAvailableItemsByType, TAG, "NOT_SUPPORTED", null)
+                    error(MethodNames.getProducts, TAG, "NOT_SUPPORTED", null)
+                    error(MethodNames.getSubscriptions, TAG, "NOT_SUPPORTED", null)
                 }
             }
         }
@@ -395,7 +416,25 @@ class AmazonInappPurchasePlugin : MethodCallHandler {
         return item
     }
 
-    private fun dateToString(date: Date): String {
-        return date.time.toDouble().toString()
+    private fun dateToString(date: Date?): String? {
+        return date?.time?.toDouble()?.toString()
+    }
+
+    private fun success(name: String, result: Any?) {
+        if ( safeResults[name] == null) {
+            Log.w(TAG, "safe result already used for $name")
+            return;
+        }
+        safeResults[name]?.success(result)
+        safeResults.remove(name)
+    }
+
+    private fun error(name: String, errorCode: String, errorMessage: String?, errorDetails: Any?) {
+        if ( safeResults[name] == null) {
+            Log.w(TAG, "safe result already used for $name")
+            return;
+        }
+        safeResults[name]?.error(errorCode, errorMessage, errorDetails)
+        safeResults.remove(name)
     }
 }

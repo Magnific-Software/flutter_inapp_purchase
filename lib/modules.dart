@@ -277,7 +277,8 @@ class PurchasedItem {
         /// ios specific
         'originalTransactionDateIOS: ${originalTransactionDateIOS?.toIso8601String()}, '
         'originalTransactionIdentifierIOS: $originalTransactionIdentifierIOS, '
-        'transactionStateIOS: $transactionStateIOS';
+        'transactionStateIOS: $transactionStateIOS'
+        'extra: ${extra?.amazon?.toJson()}';
   }
 
   /// Coerce miliseconds since epoch in double, int, or String into DateTime format
