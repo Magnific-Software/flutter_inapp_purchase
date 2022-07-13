@@ -67,9 +67,14 @@ class AmazonInappPurchasePlugin(
         this.activity = activity
     }
 
+    private var isListenerRegistered = false;
+
     private fun registerPurchaseServiceListener(context: Context) {
+        if (isListenerRegistered) return;
+        isListenerRegistered = true;
         try {
             PurchasingService.registerListener(context, purchasesUpdatedListener)
+            Log.d(tag, "Registered purchasing service listener")
         } catch (e: Exception) {
             Log.e(
                 tag,
@@ -83,7 +88,7 @@ class AmazonInappPurchasePlugin(
 
         safeResults[call.method] = safeResult!!
 
-        registerPurchaseServiceListener(context!!)
+        registerPurchaseServiceListener(context)
 
         when (call.method) {
             "getStore" -> {
@@ -239,12 +244,7 @@ class AmazonInappPurchasePlugin(
                 item["status"] = statusValue
 
                 Log.d(tag, "Putting data: $item")
-                val result = safeResult
-                if (result == null) {
-                    Log.d(tag, "Method result is null")
-                } else {
-                    channel.invokeMethod(MethodNames.CLIENT_INFORMATION_CALLBACK, item)
-                }
+                channel.invokeMethod(MethodNames.CLIENT_INFORMATION_CALLBACK, item)
             } catch (e: Exception) {
                 Log.e(tag, "ON_USER_DATA_RESPONSE_JSON_PARSE_ERROR: ${e.message}")
                 safeResult?.error("ON_USER_DATA_RESPONSE_JSON_PARSE_ERROR", e.message, null)
@@ -298,8 +298,8 @@ class AmazonInappPurchasePlugin(
                             items.put(item)
                         }
                         //System.err.println("Sending "+items.toString());
-                        safeResult?.success(items.toString())
                         channel.invokeMethod(MethodNames.SKUS_CALLBACK, items.toString())
+                        safeResult?.success(items.toString())
                     } catch (e: JSONException) {
                         safeResult?.error(tag, "E_BILLING_RESPONSE_JSON_PARSE_ERROR", e.message)
                     }
@@ -332,8 +332,8 @@ class AmazonInappPurchasePlugin(
                             receipt,
                         )
                         Log.d(tag, "opr Putting $item")
-                        safeResult?.success(item.toString())
                         channel.invokeMethod("purchase-updated", item.toString())
+                        safeResult?.success(item.toString())
                     } catch (e: JSONException) {
                         safeResult?.error(tag, "E_BILLING_RESPONSE_JSON_PARSE_ERROR", e.message)
                     }
@@ -369,10 +369,11 @@ class AmazonInappPurchasePlugin(
                             Log.d(tag, "opudr Putting $item")
                             items.put(item)
                         }
+
+                        channel.invokeMethod(MethodNames.PURCHASE_UPDATE_CALLBACK, items.toString())
                         success(MethodNames.getAvailableItemsByType, items.toString())
                         success(MethodNames.getProducts, items.toString())
                         success(MethodNames.getSubscriptions, items.toString())
-                        channel.invokeMethod(MethodNames.PURCHASE_UPDATE_CALLBACK, items.toString())
                     } catch (e: JSONException) {
                         error(
                             MethodNames.getAvailableItemsByType,
@@ -459,6 +460,7 @@ class AmazonInappPurchasePlugin(
             return
         }
         safeResults[name]?.success(result)
+        Log.w(tag, "sent result for $name")
         safeResults.remove(name)
     }
 

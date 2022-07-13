@@ -47,6 +47,10 @@ class MethodChannelInAppPurchaseAmazon extends InAppPurchaseAmazonPlatform {
 
     _attachMethodChannelListeners();
 
+    if (kDebugMode) {
+      debugPrint('[InAppPurchase] _attachMethodChannelListeners done');
+    }
+
     final completer = _completer ?? Completer();
     _completer = completer;
 
